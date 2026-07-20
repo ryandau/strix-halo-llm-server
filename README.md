@@ -14,8 +14,7 @@ The server starts on boot and exposes an OpenAI-compatible API plus a built-in c
 
 ## Start here
 
-- [docs/build-guide.md](docs/build-guide.md) — the full build, from USB stick to VS Code integration
-- [config/minimax.service](config/minimax.service) — the systemd unit, as deployed on the reference build
+- [docs/build-guide.md](docs/build-guide.md): the full build, from USB stick to VS Code integration
 
 ## Reference hardware
 
