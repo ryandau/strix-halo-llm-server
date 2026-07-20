@@ -49,7 +49,7 @@ $ ssh <user>@<box-ip>
 ### 1.1 Expand the root filesystem
 
 > [!WARNING]
-> The installer allocates only about 100 GB of the disk by default. The model download will fail with "no space left" unless you fix this now.
+> The installer allocates about 100 GB of the disk by default. The model download will fail with "no space left" unless you fix this now.
 
 ```console
 $ df -h /                                              # ~98G total means you're affected
