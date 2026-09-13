@@ -34,3 +34,13 @@ models:
     apiBase: http://BOX_IP:11434
     roles:
       - embed
+context:
+  - provider: file
+  - provider: code
+  - provider: currentFile
+  - provider: folder
+  - provider: codebase
+  - provider: diff
+  - provider: terminal
+  - provider: problems
+  - provider: docs
