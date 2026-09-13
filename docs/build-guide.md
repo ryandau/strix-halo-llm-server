@@ -1,195 +1,243 @@
-# How to build a local AI server on a Strix Halo mini PC
+# Build guide: agent runbook
 
 | | |
 |---|---|
-| **Version** | 2.0 |
-| **Last verified** | July 2026 |
+| **Version** | 3.0 |
+| **Last verified** | September 2026 |
 | **Applies to** | AMD Ryzen AI Max+ 395 ("Strix Halo") systems with 128 GB unified memory, such as the GMKtec EVO-X2, Framework Desktop, and HP Z2 Mini G1a |
-| **Software** | Ubuntu Server 26.04 LTS, llama.cpp b9969, MiniMax-M2.5 UD-Q3_K_XL |
+| **Target** | Ubuntu Server 26.04 LTS, llama.cpp b9969 or newer, MiniMax-M2.7 UD-Q3_K_S, Ollama, Continue 2.0 |
+
+This document is written for an AI coding agent to execute over SSH after the human has completed [ready-state.md](ready-state.md). Each phase ends with an acceptance check. Run it, show the output, and stop on failure. Follow the rules in [AGENTS.md](../AGENTS.md) throughout. A human can follow the same steps by hand; nothing here requires an agent.
 
 ## Goal
 
-A headless server that boots into a llama.cpp inference endpoint serving MiniMax M2.5 (230B MoE, about 33 tok/s) over the LAN, reachable from VS Code and any OpenAI-compatible client. Everything runs on Vulkan; ROCm is not used.
-
-## Prerequisites
-
-- A 128 GB Strix Halo machine
-- A second computer with an SSH client and VS Code
-- A USB stick, plus a monitor and USB keyboard for the initial install only
-- About 100 GB of download bandwidth for the model
-- No Linux experience needed beyond copy-pasting shell commands
+A headless server that boots into a llama.cpp endpoint serving MiniMax M2.7 (230B MoE, about 10B active, 32K context, about 30 tok/s) on port 8080, an Ollama sidecar on 11434 for autocomplete and embeddings, and a Continue config on the workstation that uses both. Everything on Vulkan; ROCm is not used.
 
 ## Design decisions
 
-Read once, skip on re-use.
+- Vulkan instead of ROCm. ROCm on gfx1151 has a history of kernel-version pain; the RADV driver ships with Ubuntu and works immediately.
+- llama.cpp directly, no wrapper. One binary, one systemd unit, full control over the flags that matter when a model barely fits: KV-cache quantisation, layer offload, mmap, batch sizes.
+- Ubuntu Server, stock kernel. Custom kernels are the main cause of instability on this platform.
+- An MoE model. 128 GB of memory but only about 256 GB/s of bandwidth; a model that activates about 10B of 230B parameters per token runs at usable speed where a dense model of similar quality would not.
+- Q3_K_S rather than Q3_K_XL. 94 GB leaves room for a 32K context inside the 96 GB GPU carveout; 102 GB does not.
 
-- Vulkan instead of ROCm. ROCm on gfx1151 has a history of kernel-version pain. The RADV driver ships with Ubuntu and works immediately.
-- llama.cpp directly, no wrapper. One binary, one systemd unit, full control over the flags that matter when a model barely fits in memory (KV-cache quantisation, layer offload, mmap behaviour).
-- Ubuntu Server instead of Desktop. No GUI means less to break and more RAM for models.
-- Stock kernel only. Custom kernels are the main cause of instability on this platform, and 26.04's stock kernel supports the chip natively.
-- An MoE model. The platform has plenty of memory (128 GB unified) but modest bandwidth (about 256 GB/s). MiniMax M2.5 activates only about 10B of its 230B parameters per token, which is why it runs at usable speed where a dense model of similar quality would not.
+## Phase 0: Preflight
 
-## 1. Install Ubuntu Server
-
-> [!NOTE]
-> The monitor and keyboard are needed for this section only, about 15 minutes.
-
-1. Download Ubuntu Server 26.04 LTS and flash it to USB with balenaEtcher.
-2. Boot the box from USB (`Del` or `F7` at power-on).
-3. In the installer: accept defaults, use the entire disk, and select **Install OpenSSH server**. Skip the featured snaps.
-4. Optional: check **UMA Frame Buffer Size** in BIOS. Either extreme works with Vulkan; the reference build uses a 96 GB carveout. Verify later without a monitor: `cat /sys/class/drm/card*/device/mem_info_vram_total`.
-5. After boot, log in at the console and record the IP (`ip a`). Reserve it against the machine's MAC address in your router.
-
-Everything from here is over SSH:
-
-```console
-$ ssh <user>@<box-ip>
+```bash
+ssh -o BatchMode=yes <user>@<box-ip> '
+echo "=== os"; lsb_release -ds; uname -r
+echo "=== sudo"; sudo -n true && echo SUDO_OK
+echo "=== disk"; df -h / | tail -1; lsblk -o NAME,SIZE,TYPE | grep -E "disk|lvm"
+echo "=== mem"; free -g | head -2
+echo "=== gpu"; lspci | grep -i vga; cat /sys/class/drm/card*/device/mem_info_vram_total 2>/dev/null
+echo "=== net"; ip route show default; curl -s -m 10 -o /dev/null -w "%{speed_download} B/s\n" https://huggingface.co/unsloth/MiniMax-M2.7-GGUF/resolve/main/UD-Q3_K_S/MiniMax-M2.7-UD-Q3_K_S-00001-of-00003.gguf'
 ```
 
-### 1.1 Expand the root filesystem
+**Acceptance:** Ubuntu 26.04; `SUDO_OK`; a VGA line naming an AMD device; VRAM total about 103 GB (96 GiB carveout) or whatever the BIOS was set to; a default route. Note the download speed: at 10 MB/s the model takes about 2.5 hours, at 1 MB/s about a day. Tell the user the estimate before starting Phase 3.
 
-> [!WARNING]
-> The installer allocates about 100 GB of the disk by default. The model download will fail with "no space left" unless you fix this now.
+## Phase 1: OS preparation
 
-```console
-$ df -h /                                              # ~98G total means you're affected
-$ sudo lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
-$ sudo resize2fs /dev/ubuntu-vg/ubuntu-lv
-$ df -h /                                              # now shows the full disk
+The installer allocates only about 100 GB. Expand the root filesystem online, then install the GPU stack.
+
+```bash
+sudo -n lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv && sudo -n resize2fs /dev/ubuntu-vg/ubuntu-lv
+sudo -n apt-get update && sudo -n DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+sudo -n apt-get install -y mesa-vulkan-drivers vulkan-tools radeontop libgomp1 tmux python3-pip curl
+sudo -n usermod -aG render,video <user>
 ```
 
-This resizes online. No reboot, no data loss.
+If `apt upgrade` installs a new kernel, `/var/run/reboot-required` appears. Tell the user; a reboot now is cheap, later it interrupts a serving model. Group membership needs a fresh login; the next SSH call gets it automatically.
 
-### 1.2 Update and install the GPU stack
-
-```console
-$ sudo apt update && sudo apt upgrade -y
-$ sudo apt install -y mesa-vulkan-drivers vulkan-tools radeontop libgomp1 tmux
-$ sudo usermod -aG render,video $USER
+```bash
+vulkaninfo --summary 2>/dev/null | grep -i devicename
+df -h / | tail -1
 ```
 
-Log out and back in, then confirm the GPU is visible:
+**Acceptance:** `deviceName = Radeon 8060S Graphics (RADV STRIX_HALO)` (an extra `llvmpipe` line is normal headless); root filesystem now spans the disk. A `DISPLAY` warning from vulkaninfo is normal.
 
-```console
-$ vulkaninfo --summary | grep -i devicename
-deviceName = Radeon 8060S Graphics (RADV STRIX_HALO)
+## Phase 2: llama.cpp
+
+Use the newest Ubuntu x64 Vulkan release from [github.com/ggml-org/llama.cpp/releases](https://github.com/ggml-org/llama.cpp/releases); b9969 is the verified minimum.
+
+```bash
+B=<build>   # e.g. b9969
+mkdir -p ~/llama && cd ~/llama
+curl -LO https://github.com/ggml-org/llama.cpp/releases/download/$B/llama-$B-bin-ubuntu-vulkan-x64.tar.gz
+tar -xzf llama-$B-bin-ubuntu-vulkan-x64.tar.gz && rm llama-$B-bin-ubuntu-vulkan-x64.tar.gz
+~/llama/llama-$B/llama-server --version
 ```
 
-> [!NOTE]
-> A `'DISPLAY' environment variable not set` warning and a `llvmpipe` CPU device are normal on a headless system.
+**Acceptance:** `--version` prints the build number. A missing shared library means an apt package; `libgomp.so.1` is `libgomp1`.
 
-## 2. Install llama.cpp
+## Phase 3: Model download
 
-Download the current Ubuntu x64 Vulkan asset from the [llama.cpp releases page](https://github.com/ggml-org/llama.cpp/releases). The filename looks like `llama-<build>-bin-ubuntu-vulkan-x64.tar.gz`.
+About 94 GB in three shards. Run inside tmux with a log and an exit marker.
 
-```console
-$ mkdir -p ~/llama && cd ~/llama
-$ curl -LO https://github.com/ggml-org/llama.cpp/releases/download/b9969/llama-b9969-bin-ubuntu-vulkan-x64.tar.gz
-$ tar -xzf llama-b9969-bin-ubuntu-vulkan-x64.tar.gz
-$ ~/llama/llama-b9969/llama-server --version
-version: 9969 (76f279805)
+```bash
+pip install -U "huggingface_hub[cli]" --break-system-packages
+mkdir -p ~/models/minimax27
+tmux new-session -d -s dl '~/.local/bin/hf download unsloth/MiniMax-M2.7-GGUF --include "*UD-Q3_K_S*" --local-dir ~/models/minimax27 2>&1 | tee ~/models/minimax27/download.log; echo DONE_EXIT=$? >> ~/models/minimax27/download.log'
 ```
 
-Substitute the current build number. If `--version` reports a missing shared library, install the matching package (for example `sudo apt install -y libgomp1`) and retry.
+Monitoring, every 5 minutes or on request:
 
-## 3. Download the model
-
-The model is about 95 GB. Run the download inside `tmux` so it survives SSH disconnection.
-
-```console
-$ sudo apt install -y python3-pip
-$ pip install -U "huggingface_hub[cli]" --break-system-packages
-$ mkdir -p ~/models
-$ tmux
-$ hf download unsloth/MiniMax-M2.5-GGUF --include "*UD-Q3_K_XL*" --local-dir ~/models/minimax
+```bash
+grep DONE_EXIT ~/models/minimax27/download.log || echo running
+du -sm ~/models/minimax27 | cut -f1
+r0=$(cat /sys/class/net/$(ip route show default | awk "{print \$5}")/statistics/rx_bytes); sleep 30; r1=$(cat /sys/class/net/$(ip route show default | awk "{print \$5}")/statistics/rx_bytes); echo "rx_MBps=$(( (r1-r0)/30/1000000 ))"
 ```
 
-Detach with `Ctrl+B`, `D`. Reattach with `tmux attach`.
+Two traps:
 
-> [!TIP]
-> The progress bars mislead. Shards accumulate in a hidden `.cache` directory until each one completes, so track real progress with `du -sh ~/models/minimax`. An interrupted download resumes when you re-run the same command.
+- **Progress reporting misleads.** Shards live in `.cache` until complete, and the Xet client buffers in memory and flushes in bursts, so folder size jumps rather than climbs. Trust the network counter.
+- **A stall does not resume.** If the network counter reads zero for two consecutive checks with no established HTTPS connections and the process still alive, the client has hung. Killing it and re-running `hf download` starts the affected shard again from byte zero. If the shard is mostly done, finish it by hand: move its `.incomplete` file to the final path, `truncate` it back by 64 MB, fetch the remaining range from `https://huggingface.co/unsloth/MiniMax-M2.7-GGUF/resolve/main/UD-Q3_K_S/<shard>` with 16 parallel `curl -r start-end` segments, append them in order, and verify. Kill the hung process by PID found via `pgrep -x python3` plus `/proc/<pid>/cmdline`, never `pkill -f`.
 
-The download is finished when the `hf` process exits and `ls -lh ~/models/minimax/UD-Q3_K_XL/` lists four `.gguf` files totalling about 95 GB. Uneven shard sizes (7.9M, 47G, 47G, 1.7G) are expected.
+Verification, for every shard:
 
-## 4. First run
-
-```console
-$ ~/llama/llama-b9969/llama-server \
-    --model ~/models/minimax/UD-Q3_K_XL/MiniMax-M2.5-UD-Q3_K_XL-00001-of-00004.gguf \
-    -ngl 999 -c 16384 --flash-attn on \
-    --cache-type-k q4_0 --cache-type-v q4_0 \
-    --no-mmap --jinja --host 0.0.0.0 --port 8080
+```bash
+curl -s https://huggingface.co/api/models/unsloth/MiniMax-M2.7-GGUF/tree/main/UD-Q3_K_S   # size and lfs.oid per file
+ls -l ~/models/minimax27/UD-Q3_K_S/
+sha256sum ~/models/minimax27/UD-Q3_K_S/*.gguf    # a few minutes on NVMe
+rm -rf ~/models/minimax27/.cache ~/models/minimax27/download.log
 ```
 
-Point `--model` at the first shard and the rest are found automatically. `-ngl 999` puts all layers on the GPU, the `q4_0` cache flags compress the KV cache so the model fits in 128 GB, `-c 16384` is the practical context ceiling at this size, and `--jinja` enables the model's chat template.
+**Acceptance:** `DONE_EXIT=0`; three files whose sizes and SHA-256 match the API; `.cache` removed.
 
-> [!NOTE]
-> The first load takes several minutes with little output while 95 GB is read from disk. A `special_eos_id is not in special_eog_ids` warning at startup is a known harmless quirk of MiniMax GGUFs.
+## Phase 4: First run and benchmark
 
-Wait for `server listening on 0.0.0.0:8080`, then open `http://<box-ip>:8080` from another machine. llama.cpp serves a built-in chat UI with a reasoning-trace viewer. Expect 30 tok/s or better.
+Run in tmux so a slow load or crash does not take the SSH session with it.
 
-To verify GPU offload, run `radeontop` in a second session while the model generates. The graphics pipe should be busy with roughly 99 GB of VRAM in use. A GPU at 0% with the CPU saturated means it fell back to CPU; recheck section 1.2.
+```bash
+tmux new-session -d -s srv '~/llama/llama-<build>/llama-server --model ~/models/minimax27/UD-Q3_K_S/MiniMax-M2.7-UD-Q3_K_S-00001-of-00003.gguf -ngl 999 -c 32768 --parallel 1 --cache-reuse 256 -b 4096 -ub 2048 --flash-attn on --cache-type-k q4_0 --cache-type-v q4_0 --no-mmap --jinja --temp 1.0 --top-p 0.95 --top-k 40 --host 0.0.0.0 --port 8080 2>&1 | tee ~/srv.log'
+until curl -s -m 3 localhost:8080/health | grep -q ok; do sleep 5; done; echo UP
+awk '{printf "vram %.1f GB\n", $1/1e9}' /sys/class/drm/card*/device/mem_info_vram_used | head -1
+```
 
-## 5. Run as a service
+| Flag | Why |
+|---|---|
+| `-ngl 999` | All layers on the GPU |
+| `-c 32768` | 32K context. Fits with Q3_K_S; 16K ran out fast under agentic tools |
+| `--parallel 1` | One slot gets the whole context instead of four sharing it |
+| `--cache-reuse 256` | Prompt cache survives small prefix changes; a repeated prompt costs one token |
+| `-b 4096 -ub 2048` | Larger batches. Prompt processing went from 161 to 241 tok/s on a 14K prompt; the biggest single win on this platform |
+| `--cache-type-k/v q4_0` | Compresses the KV cache so the model fits |
+| `--jinja` | Enables the chat template, including the reasoning channel |
+| `--temp 1.0 --top-p 0.95 --top-k 40` | MiniMax's recommended sampling for M2.7 |
 
-Paste this whole block as one command. It creates the service file with your username and paths filled in automatically:
+A `special_eos_id is not in special_eog_ids` warning at load is a known harmless quirk of MiniMax GGUFs.
 
-```console
-$ sudo tee /etc/systemd/system/minimax.service > /dev/null << EOF
+Quality check: send a coding prompt with `max_tokens` 3000 (the model reasons first; a small budget returns an empty reply), extract the code block and execute it.
+
+```bash
+curl -s localhost:8080/v1/chat/completions -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"Write a Python function that parses an ISO 8601 duration like P3DT4H5M into total seconds, with two asserts. No explanation."}],"max_tokens":3000}' > /tmp/q.json
+python3 -c 'import json;d=json.load(open("/tmp/q.json"));t=d["timings"];print("gen_tps=%.1f finish=%s"%(t["predicted_per_second"],d["choices"][0]["finish_reason"]));open("/tmp/q.py","w").write(d["choices"][0]["message"]["content"])'
+python3 -c 'import re;s=open("/tmp/q.py").read();m=re.search(r"```(?:python)?\n(.*?)```",s,re.S);exec(m.group(1) if m else s);print("asserts passed")'
+```
+
+Prompt-processing benchmark: send a synthetic prompt of about 14K tokens and one of about 3.6K, each with `max_tokens` 1, and read `timings.prompt_per_second` and `timings.prompt_n` from the response. Use fresh random content each time so the cache cannot hit.
+
+**Acceptance:** health ok; VRAM about 96 GB; `finish=stop` with asserts passed; generation at or above 28 tok/s; prompt processing at or above 220 tok/s at 14K and 300 tok/s at 3.6K. Then `tmux kill-session -t srv` and `rm ~/srv.log /tmp/q.*`.
+
+## Phase 5: Service
+
+```bash
+cat > ~/minimax.service <<EOF
 [Unit]
-Description=MiniMax M2.5 llama.cpp server
+Description=MiniMax M2.7 llama.cpp server
 After=network.target
 
 [Service]
-User=$USER
-ExecStart=$HOME/llama/llama-b9969/llama-server --model $HOME/models/minimax/UD-Q3_K_XL/MiniMax-M2.5-UD-Q3_K_XL-00001-of-00004.gguf -ngl 999 -c 16384 --flash-attn on --cache-type-k q4_0 --cache-type-v q4_0 --no-mmap --jinja --host 0.0.0.0 --port 8080
+User=<user>
+ExecStart=/home/<user>/llama/llama-<build>/llama-server --model /home/<user>/models/minimax27/UD-Q3_K_S/MiniMax-M2.7-UD-Q3_K_S-00001-of-00003.gguf -ngl 999 -c 32768 --parallel 1 --cache-reuse 256 -b 4096 -ub 2048 --flash-attn on --cache-type-k q4_0 --cache-type-v q4_0 --no-mmap --jinja --temp 1.0 --top-p 0.95 --top-k 40 --host 0.0.0.0 --port 8080
 Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 EOF
+sudo -n install -m 644 ~/minimax.service /etc/systemd/system/minimax.service && rm ~/minimax.service
+sudo -n systemctl daemon-reload && sudo -n systemctl enable --now minimax
+until curl -s -m 3 localhost:8080/health | grep -q ok; do sleep 5; done; systemctl is-active minimax
 ```
 
-```console
-$ sudo systemctl daemon-reload
-$ sudo systemctl enable --now minimax
-$ systemctl status minimax
+**Acceptance:** `active`, health ok, and `journalctl -u minimax -b | grep listening` shows port 8080. Additional GGUF models follow the same pattern on another port.
+
+## Phase 6: Ollama sidecar
+
+MiniMax is too slow for inline autocomplete and cannot produce embeddings. Two small models on Ollama sit beside it in about 2.4 GB.
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+sudo -n mkdir -p /etc/systemd/system/ollama.service.d
+printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\nEnvironment="OLLAMA_VULKAN=1"\nEnvironment="OLLAMA_CONTEXT_LENGTH=32768"\n' | sudo -n tee /etc/systemd/system/ollama.service.d/override.conf
+sudo -n systemctl daemon-reload && sudo -n systemctl restart ollama
+ollama pull qwen2.5-coder:1.5b-base && ollama pull nomic-embed-text
+curl -s localhost:11434/api/generate -d '{"model":"qwen2.5-coder:1.5b-base","prompt":"def fib(n):\n    ","stream":false,"options":{"num_predict":30}}' | python3 -c 'import sys,json;d=json.load(sys.stdin);print("tps=%.0f"%(d["eval_count"]/(d["eval_duration"]/1e9)))'
+curl -s localhost:11434/api/embed -d '{"model":"nomic-embed-text","input":"hello"}' | python3 -c 'import sys,json;print("dims",len(json.load(sys.stdin)["embeddings"][0]))'
+curl -s localhost:8080/health
 ```
 
-The endpoint now starts on every boot on `:8080`. To serve additional GGUF models, repeat the pattern: download the model, copy the unit file under a new name, change the model path and port.
+**Acceptance:** autocomplete at or above 40 tok/s; `dims 768`; MiniMax health still ok. Remove any other Ollama models that nothing uses.
 
-## 6. IDE integration
+## Phase 7: Workstation
 
-Install Cline (agentic) or Continue (chat and autocomplete) in VS Code on your workstation and register the provider:
+On the workstation, not the box:
 
-| Provider | Type | Endpoint |
-|---|---|---|
-| MiniMax M2.5 | OpenAI-compatible | `http://<box-ip>:8080/v1` (any API key) |
+1. Back up `~/.continue/config.yaml` if it exists.
+2. Copy [client/continue.config.yaml](../client/continue.config.yaml) to `~/.continue/config.yaml` with `BOX_IP` replaced.
+3. If `~/.continue/.continuerc.json` sets `"disableIndexing": true`, change it to `false` so codebase search uses the embedding model.
+4. Confirm end to end from the workstation:
 
-Paste compiler or runtime errors back into the same conversation rather than starting over; the model fixes its own mistakes readily when shown the error.
+```bash
+curl -s http://<box-ip>:8080/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"MiniMax-M2.7","messages":[{"role":"user","content":"Reply with exactly: READY"}],"max_tokens":2000}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["choices"][0]["message"]["content"].strip())'
+curl -s http://<box-ip>:11434/api/tags | python3 -c 'import sys,json;print([m["name"] for m in json.load(sys.stdin)["models"]])'
+```
+
+**Acceptance:** `READY`; both small models listed. Tell the user to reload the VS Code window if Continue's dropdown still shows old names, and that the backup exists.
+
+## Phase 8: Tidy and report
+
+On the box: no tarballs in `~/llama`, no `.cache` under `~/models`, nothing of yours in `/tmp`, no tmux sessions, `sudo -n apt-get clean`. Then report:
+
+| Item | Value |
+|---|---|
+| Model / quant | |
+| llama.cpp build | |
+| Context | |
+| Generation tok/s (short context) | |
+| Prompt tok/s at 14K / 3.6K | |
+| VRAM used | |
+| Disk used / free | |
+| Ollama models | |
+| Continue config | path and backup path |
+| Left for the user | reboot pending? indexing? anything skipped and why |
 
 ## What to expect
 
-MiniMax M2.5 at Q3 quantisation sits roughly at last year's frontier, around the Claude Sonnet/Opus 4 class. It usually gets architecture right and occasionally fumbles version-specific API details. Current cloud models still win on the hardest 10 to 15% of tasks.
+MiniMax M2.7 at Q3 lands near the Claude Opus 4.6 class on the vendor's coding benchmarks (SWE-bench Pro 56.2, Terminal-Bench 2 57.0). One independent head-to-head found it matched Opus 4.6 on bug and vulnerability detection while trailing on architecture and defence in depth. Current cloud models still win the hardest 10 to 15% of tasks.
 
-Generation runs at about 33 tok/s. Prompt processing is the platform's weak side and there is no local prompt caching, so long agentic sessions pay a per-turn wait.
+Generation runs at about 30 tok/s at short context, falling to about 22 tok/s with 16K tokens in the window.
 
-The 16K context fills quickly under agentic tools. If that becomes the limit, look at the pruned `MiniMax-M2.5-REAP-139B` variant, which keeps most of the quality with far more headroom, or run a smaller model alongside for quick tasks.
+Prompt processing is the platform's weak side. With the flags above it runs at 240 to 330 tok/s, so a 14K-token prompt waits about 60 seconds before the first token. The prefix cache removes that cost when a conversation grows by appending, but not when the client trims old messages off the front. Under Continue: start a fresh chat per task, avoid attaching whole large files, and treat 15K tokens as the point where a session has become expensive. `journalctl -u minimax -f | grep print_timing` shows exactly where the time goes.
 
-The point of the build is not to beat cloud models. It is to move most of your token volume to inference that is free, private, and works offline, with cloud as the escalation path.
+The point of the build is not to beat cloud models. It is to move most of your token volume to inference that is free, private and offline, with cloud as the escalation path.
 
 ## Troubleshooting
 
 | Symptom | Cause | Resolution |
 |---|---|---|
-| `No space left on device` at ~90 GB | Installer's 100 GB LVM default | §1.1 |
+| `No space left on device` at ~90 GB | Installer's 100 GB LVM default | Phase 1 |
 | `error while loading shared libraries: libgomp.so.1` | Prebuilt binary dependency | `sudo apt install libgomp1` |
-| `unzip` rejects the release archive | Releases ship as `.tar.gz` | `tar -xzf` |
-| Download appears reset after resume | Shards hidden in `.cache` until complete | Trust `du -sh`, not the bars |
+| Download folder size frozen, network busy | Xet client buffering | Normal; trust the network counter |
+| Download at 0 B/s, process alive | Xet client hang; restart will not resume the shard | Phase 3 trap: finish the shard with range requests |
 | Model load hangs | mmap behaviour on unified memory | Toggle `--no-mmap` |
-| GPU at 0%, CPU saturated | CPU fallback | Recheck §1.2 driver check |
+| GPU at 0%, CPU saturated | CPU fallback | Recheck the Phase 1 driver check and group membership |
+| Empty reply, `finish_reason: length` | Reasoning consumed the token budget | Raise `max_tokens` to 8192 or more |
+| Minutes before the first token | Large prompt at 130 to 240 tok/s | Confirm `-ub 2048`; shorten Continue sessions |
+| Reasoning loops on long tasks | Quantised KV cache (reported on Q6/Q8) | Try `--cache-type-k q8_0`; costs about 2 GB at 32K |
+| `systemd-networkd-wait-online` failed | Wired port has no cable; box is on Wi-Fi | Harmless |
+| SSH session dies mid-script | `pkill -f` matched your own command line | Kill by PID from `pgrep -x` |
 | General instability | Non-stock kernel | Stock kernel only |
 
 ## Hardware reference
 
-GMKtec EVO-X2 as built: AMD Ryzen AI Max+ 395 "Strix Halo" (16C/32T Zen 5), Radeon 8060S iGPU (40 CU RDNA 3.5, `gfx1151`), 128 GB LPDDR5X-8000 on a 256-bit bus at about 256 GB/s, 2 TB NVMe.
+GMKtec EVO-X2 as built: AMD Ryzen AI Max+ 395 "Strix Halo" (16C/32T Zen 5), Radeon 8060S iGPU (40 CU RDNA 3.5, `gfx1151`), 128 GB LPDDR5X-8000 on a 256-bit bus at about 256 GB/s, 2 TB NVMe, 96 GB UMA carveout.

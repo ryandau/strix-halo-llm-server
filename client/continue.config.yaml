@@ -1,0 +1,36 @@
+# Continue config for the Strix Halo box. The agent copies this to ~/.continue/config.yaml
+# with BOX_IP substituted. Keep maxTokens high: MiniMax M2.7 reasons before it answers and a
+# small budget is consumed entirely by reasoning, returning an empty reply.
+name: Main Config
+version: 1.0.0
+schema: v1
+models:
+  - name: MiniMax M2.7
+    provider: openai
+    model: MiniMax-M2.7
+    apiBase: http://BOX_IP:8080/v1
+    apiKey: none
+    roles:
+      - chat
+      - edit
+      - apply
+    capabilities:
+      - tool_use
+    defaultCompletionOptions:
+      contextLength: 32768
+      maxTokens: 8192
+      temperature: 1.0
+      topP: 0.95
+      topK: 40
+  - name: Qwen2.5-Coder 1.5B
+    provider: ollama
+    model: qwen2.5-coder:1.5b-base
+    apiBase: http://BOX_IP:11434
+    roles:
+      - autocomplete
+  - name: Nomic Embed
+    provider: ollama
+    model: nomic-embed-text:latest
+    apiBase: http://BOX_IP:11434
+    roles:
+      - embed
