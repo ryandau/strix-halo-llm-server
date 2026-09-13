@@ -121,7 +121,7 @@ awk '{printf "vram %.1f GB\n", $1/1e9}' /sys/class/drm/card*/device/mem_info_vra
 | `--cache-reuse 256` | Prompt cache survives small prefix changes; a repeated prompt costs one token |
 | `--cache-ram 16384` | Prompt cache budget in host RAM. Entries run about 1.4 GB, so the 8192 default holds roughly five and then evicts continuously |
 | `-b 4096 -ub 2048` | Larger batches. Prompt processing went from 161 to 241 tok/s on a 14K prompt; the biggest single win on this platform |
-| `--cache-type-k/v q8_0` | Compresses the KV cache. q8_0 costs about 2 GB more than q4_0 at 32K and measured faster on Vulkan, 30 tok/s against 25 |
+| `--cache-type-k/v q8_0` | Compresses the KV cache so the model fits. q8_0 costs about 2 GB more than q4_0 at 32K and buys KV fidelity over a long session; generation speed is unchanged, 24.6 against 25.4 tok/s at 9K |
 | `--jinja` | Enables the chat template, including the reasoning channel |
 | `--temp 1.0 --top-p 0.95 --top-k 40` | MiniMax's recommended sampling for M2.7 |
 
@@ -137,7 +137,7 @@ python3 -c 'import re;s=open("/tmp/q.py").read();m=re.search(r"```(?:python)?\n(
 
 Prompt-processing benchmark: send a synthetic prompt of about 14K tokens and one of about 3.6K, each with `max_tokens` 1, and read `timings.prompt_per_second` and `timings.prompt_n` from the response. Use fresh random content each time so the cache cannot hit.
 
-**Acceptance:** health ok; VRAM about 96 GB; `finish=stop` with asserts passed; generation at or above 28 tok/s; prompt processing at or above 220 tok/s at 14K and 300 tok/s at 3.6K. Then `tmux kill-session -t srv` and `rm ~/srv.log /tmp/q.*`.
+**Acceptance:** health ok; VRAM about 100 GB of the 103 GB carveout; `finish=stop` with asserts passed; generation at or above 28 tok/s; prompt processing at or above 220 tok/s at 14K and 300 tok/s at 3.6K. Then `tmux kill-session -t srv` and `rm ~/srv.log /tmp/q.*`.
 
 ## Phase 5: Service
 
@@ -245,9 +245,9 @@ Or ask your agent: "check the box".
 | Model load hangs | mmap behaviour on unified memory | Toggle `--no-mmap` |
 | GPU at 0%, CPU saturated | CPU fallback | Recheck the Phase 1 driver check and group membership |
 | Empty reply, `finish_reason: length` | Reasoning consumed the token budget | Raise `max_tokens` to 8192 or more |
-| Minutes before the first token | Large prompt at 130 to 240 tok/s | Confirm `-ub 2048`; shorten Continue sessions |
+| Minutes before the first token | Large prompt at 240 to 330 tok/s | Confirm `-ub 2048`; shorten Continue sessions |
 | Repeated prompts reprocessing from scratch | Prompt cache evicting under the default budget | Grep the log for `making room for prompt cache`; raise `--cache-ram` |
-| `Failed to parse tool call arguments as JSON` | Model emitted an unescaped newline inside a string argument; more likely at Q3 | Retry; if persistent, the weight quantisation is the limit, not the settings |
+| `Failed to parse tool call arguments as JSON` | Model emitted an unescaped newline inside a string argument. Observed at Q3; not compared against higher quants | Retry the call; if it persists, suspect the weight quantisation rather than the settings |
 | `systemd-networkd-wait-online` failed | Wired port has no cable; box is on Wi-Fi | Harmless |
 | SSH session dies mid-script | `pkill -f` matched your own command line | Kill by PID from `pgrep -x` |
 | General instability | Non-stock kernel | Stock kernel only |

@@ -47,7 +47,7 @@ The build in place works if it is b9969 or newer. Only replace it if the new mod
 4. Poll `curl -s localhost:8080/health` until `ok`.
 5. Run the build-guide Phase 4 checks: coding prompt with `max_tokens` 3000 and executed asserts, then the prompt-processing benchmark at two sizes.
 
-**Acceptance:** health ok, VRAM about 96 GB, generation at or above 28 tok/s at short context, prompt processing at or above 220 tok/s on a 14K prompt, correct code from the test prompt.
+**Acceptance:** health ok, VRAM about 100 GB, generation at or above 28 tok/s at short context, prompt processing at or above 220 tok/s on a 14K prompt, correct code from the test prompt.
 
 **Rollback:** if any check fails, reinstall the old ExecStart line, `daemon-reload`, `restart`, confirm health, and report what failed. The old model is still on disk.
 
