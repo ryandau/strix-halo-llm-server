@@ -1,6 +1,6 @@
 # Local coding AI on a Strix Halo mini PC
 
-Self-hosted MiniMax M2.7 on a 128 GB AMD Ryzen AI Max+ 395 box, served by llama.cpp on Vulkan and used from VS Code. Set up by an AI agent from one prompt.
+Self-hosted MiniMax M2.7 on a [128 GB AMD Ryzen AI Max+ 395](https://www.gmktec.com/products/amd-ryzen%E2%84%A2-ai-max-395-evo-x2-ai-mini-pc?variant=46826048585882) box, served by llama.cpp on Vulkan and used from VS Code. Set up by an AI agent from one prompt.
 
 **What you get:** MiniMax M2.7 answering on your own network at about 30 tokens a second, plus fast autocomplete and code search. No cloud, no subscription, works offline.
 
