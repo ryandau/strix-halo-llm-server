@@ -4,6 +4,8 @@ Self-hosted MiniMax M2.7 on a 128 GB AMD Ryzen AI Max+ 395 box, served by llama.
 
 **What you get:** MiniMax M2.7 answering on your own network at about 30 tokens a second, plus fast autocomplete and code search. No cloud, no subscription, works offline.
 
+**How good is it?** Roughly Claude Sonnet 4.5. Fine for everyday coding, weaker on long multi-step jobs. Keep a cloud model for the hard stuff.
+
 ## Three steps
 
 1. **Set up the box.** About 15 minutes at the keyboard. [Checklist](docs/ready-state.md)

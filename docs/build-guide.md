@@ -214,7 +214,11 @@ On the box: no tarballs in `~/llama`, no `.cache` under `~/models`, nothing of y
 
 ## What to expect
 
-MiniMax M2.7 at Q3 sits within a few points of the leading closed models on the vendor's coding benchmarks (SWE-bench Pro 56.2, Terminal-Bench 2 57.0). One independent head-to-head found it matched a frontier cloud model on bug and vulnerability detection while trailing on architecture and defence in depth. Current cloud models still win the hardest 10 to 15% of tasks.
+Independent evals from [Vals AI](https://www.vals.ai/models/minimax_MiniMax-M2.7) put M2.7 level with Claude Sonnet 4.5: #10 on SWE-bench Verified, #12 on Terminal-Bench 2.0. Frontier cloud models are far ahead on agentic work. Maths is its weak spot (3% on Proof Bench).
+
+Those scores are for the full-precision model. This build runs Q3, which is worse by an unmeasured amount. You'll see it as malformed tool calls and slipping instructions late in a session.
+
+Good at: single files, boilerplate, explaining code, reviews. Bad at: multi-step agent work, big refactors, long conversations.
 
 Generation runs at about 30 tok/s at short context, falling to about 22 tok/s with 16K tokens in the window.
 
