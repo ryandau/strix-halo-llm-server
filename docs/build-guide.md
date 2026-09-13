@@ -108,7 +108,7 @@ rm -rf ~/models/minimax27/.cache ~/models/minimax27/download.log
 Run in tmux so a slow load or crash does not take the SSH session with it.
 
 ```bash
-tmux new-session -d -s srv '~/llama/llama-<build>/llama-server --model ~/models/minimax27/UD-Q3_K_S/MiniMax-M2.7-UD-Q3_K_S-00001-of-00003.gguf -ngl 999 -c 32768 --parallel 1 --cache-reuse 256 -b 4096 -ub 2048 --flash-attn on --cache-type-k q4_0 --cache-type-v q4_0 --no-mmap --jinja --temp 1.0 --top-p 0.95 --top-k 40 --host 0.0.0.0 --port 8080 2>&1 | tee ~/srv.log'
+tmux new-session -d -s srv '~/llama/llama-<build>/llama-server --model ~/models/minimax27/UD-Q3_K_S/MiniMax-M2.7-UD-Q3_K_S-00001-of-00003.gguf -ngl 999 -c 32768 --parallel 1 --cache-reuse 256 -b 4096 -ub 2048 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --cache-ram 16384 --no-mmap --jinja --temp 1.0 --top-p 0.95 --top-k 40 --host 0.0.0.0 --port 8080 2>&1 | tee ~/srv.log'
 until curl -s -m 3 localhost:8080/health | grep -q ok; do sleep 5; done; echo UP
 awk '{printf "vram %.1f GB\n", $1/1e9}' /sys/class/drm/card*/device/mem_info_vram_used | head -1
 ```
@@ -119,8 +119,9 @@ awk '{printf "vram %.1f GB\n", $1/1e9}' /sys/class/drm/card*/device/mem_info_vra
 | `-c 32768` | 32K context. Fits with Q3_K_S; 16K ran out fast under agentic tools |
 | `--parallel 1` | One slot gets the whole context instead of four sharing it |
 | `--cache-reuse 256` | Prompt cache survives small prefix changes; a repeated prompt costs one token |
+| `--cache-ram 16384` | Prompt cache budget in host RAM. Entries run about 1.4 GB, so the 8192 default holds roughly five and then evicts continuously |
 | `-b 4096 -ub 2048` | Larger batches. Prompt processing went from 161 to 241 tok/s on a 14K prompt; the biggest single win on this platform |
-| `--cache-type-k/v q4_0` | Compresses the KV cache so the model fits |
+| `--cache-type-k/v q8_0` | Compresses the KV cache. q8_0 costs about 2 GB more than q4_0 at 32K and measured faster on Vulkan, 30 tok/s against 25 |
 | `--jinja` | Enables the chat template, including the reasoning channel |
 | `--temp 1.0 --top-p 0.95 --top-k 40` | MiniMax's recommended sampling for M2.7 |
 
@@ -148,7 +149,7 @@ After=network.target
 
 [Service]
 User=<user>
-ExecStart=/home/<user>/llama/llama-<build>/llama-server --model /home/<user>/models/minimax27/UD-Q3_K_S/MiniMax-M2.7-UD-Q3_K_S-00001-of-00003.gguf -ngl 999 -c 32768 --parallel 1 --cache-reuse 256 -b 4096 -ub 2048 --flash-attn on --cache-type-k q4_0 --cache-type-v q4_0 --no-mmap --jinja --temp 1.0 --top-p 0.95 --top-k 40 --host 0.0.0.0 --port 8080
+ExecStart=/home/<user>/llama/llama-<build>/llama-server --model /home/<user>/models/minimax27/UD-Q3_K_S/MiniMax-M2.7-UD-Q3_K_S-00001-of-00003.gguf -ngl 999 -c 32768 --parallel 1 --cache-reuse 256 -b 4096 -ub 2048 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --cache-ram 16384 --no-mmap --jinja --temp 1.0 --top-p 0.95 --top-k 40 --host 0.0.0.0 --port 8080
 Restart=on-failure
 
 [Install]
@@ -245,7 +246,8 @@ Or ask your agent: "check the box".
 | GPU at 0%, CPU saturated | CPU fallback | Recheck the Phase 1 driver check and group membership |
 | Empty reply, `finish_reason: length` | Reasoning consumed the token budget | Raise `max_tokens` to 8192 or more |
 | Minutes before the first token | Large prompt at 130 to 240 tok/s | Confirm `-ub 2048`; shorten Continue sessions |
-| Reasoning loops on long tasks | Quantised KV cache (reported on Q6/Q8) | Try `--cache-type-k q8_0`; costs about 2 GB at 32K |
+| Repeated prompts reprocessing from scratch | Prompt cache evicting under the default budget | Grep the log for `making room for prompt cache`; raise `--cache-ram` |
+| `Failed to parse tool call arguments as JSON` | Model emitted an unescaped newline inside a string argument; more likely at Q3 | Retry; if persistent, the weight quantisation is the limit, not the settings |
 | `systemd-networkd-wait-online` failed | Wired port has no cable; box is on Wi-Fi | Harmless |
 | SSH session dies mid-script | `pkill -f` matched your own command line | Kill by PID from `pgrep -x` |
 | General instability | Non-stock kernel | Stock kernel only |
