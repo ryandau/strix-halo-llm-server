@@ -221,6 +221,18 @@ Prompt processing is the platform's weak side. With the flags above it runs at 2
 
 The point of the build is not to beat cloud models. It is to move most of your token volume to inference that is free, private and offline, with cloud as the escalation path.
 
+## Day to day
+
+```bash
+ssh <user>@<box-ip>
+systemctl status minimax                       # is the model server up
+journalctl -u minimax -f | grep print_timing   # how long each request took, and why
+radeontop                                      # GPU load
+du -sh ~/models/*                              # disk used by models
+```
+
+Or ask your agent: "check the box".
+
 ## Troubleshooting
 
 | Symptom | Cause | Resolution |
