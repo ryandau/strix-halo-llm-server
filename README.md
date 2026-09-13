@@ -1,6 +1,6 @@
-# strix-halo-llm-server
+# Local coding AI on a Strix Halo mini PC
 
-Run a private coding AI on a 128 GB Strix Halo mini PC and use it from VS Code.
+Self-hosted MiniMax M2.7 on a 128 GB AMD Ryzen AI Max+ 395 box, served by llama.cpp on Vulkan and used from VS Code. Set up by an AI agent from one prompt.
 
 **What you get:** MiniMax M2.7 answering on your own network at about 30 tokens a second, plus fast autocomplete and code search. No cloud, no subscription, works offline.
 
