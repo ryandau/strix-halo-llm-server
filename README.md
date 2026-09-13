@@ -13,7 +13,7 @@ Written from a real build and a real upgrade, including every trap hit along the
 | MiniMax M2.7 UD-Q3_K_S | llama.cpp `llama-server` (Vulkan) | `minimax` | 8080 | about 30 tok/s generation, 240 to 330 tok/s prompt |
 | Qwen2.5-Coder 1.5B (autocomplete), Nomic Embed (embeddings) | Ollama | `ollama` | 11434 | about 60 tok/s |
 
-The server starts on boot and exposes an OpenAI-compatible API plus a built-in chat UI with a 32K context. VS Code (Continue) uses it for chat, edit, autocomplete and codebase search. MiniMax M2.7 at Q3 lands near the Claude Opus 4.6 class on coding benchmarks, the best coding quality that fits in 128 GB today.
+The server starts on boot and exposes an OpenAI-compatible API plus a built-in chat UI with a 32K context. VS Code (Continue) uses it for chat, edit, autocomplete and codebase search. MiniMax M2.7 at Q3 sits within a few points of the leading closed models on the vendor's coding benchmarks, the best coding quality that fits in 128 GB today.
 
 ## How the build works
 

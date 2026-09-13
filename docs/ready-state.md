@@ -54,7 +54,6 @@ $ ssh -o BatchMode=yes <user>@<box-ip> 'sudo -n true && echo READY'
 ```console
 $ git clone https://github.com/ryandau/strix-halo-llm-server.git
 $ cd strix-halo-llm-server
-$ claude
 ```
 
-Then paste the handoff prompt from the README. You're done at the keyboard.
+Open that folder in your AI coding agent and paste the handoff prompt from the README. You're done at the keyboard.

@@ -213,7 +213,7 @@ On the box: no tarballs in `~/llama`, no `.cache` under `~/models`, nothing of y
 
 ## What to expect
 
-MiniMax M2.7 at Q3 lands near the Claude Opus 4.6 class on the vendor's coding benchmarks (SWE-bench Pro 56.2, Terminal-Bench 2 57.0). One independent head-to-head found it matched Opus 4.6 on bug and vulnerability detection while trailing on architecture and defence in depth. Current cloud models still win the hardest 10 to 15% of tasks.
+MiniMax M2.7 at Q3 sits within a few points of the leading closed models on the vendor's coding benchmarks (SWE-bench Pro 56.2, Terminal-Bench 2 57.0). One independent head-to-head found it matched a frontier cloud model on bug and vulnerability detection while trailing on architecture and defence in depth. Current cloud models still win the hardest 10 to 15% of tasks.
 
 Generation runs at about 30 tok/s at short context, falling to about 22 tok/s with 16K tokens in the window.
 
