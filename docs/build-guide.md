@@ -16,7 +16,7 @@ A headless server that boots into a llama.cpp endpoint serving Qwen3.8-27B (dens
 
 - **Vulkan instead of ROCm.** ROCm on gfx1151 is sensitive to kernel versions and fails with out-of-memory errors near the carve-out limit. The RADV driver ships with Ubuntu and works immediately. ROCm wins on prompt processing by 20 to 40 per cent in published tests, Vulkan wins on generation.
 - **llama.cpp directly, no wrapper.** One binary, one systemd unit, full control over the flags that matter: KV-cache type, batch sizes, speculative decoding, load mode.
-- **Ubuntu Server, stock kernel.** Custom kernels are the main cause of instability on this platform. One kernel parameter is added in Phase 5.
+- **Ubuntu Server, stock kernel.** The stock kernel works with one parameter added in Phase 5, and it keeps receiving security updates through apt. Nothing in this build needs a custom kernel.
 - **A dense 27B at Q6.** On this hardware the choice is between a dense model of this size at a high-fidelity quant and a much larger mixture-of-experts model squeezed to 3 bits per weight. Quantisation that aggressive costs real quality, and the MoE architectures that fit are the ones that suffer most from it. Qwen3.8-27B at Q6_K stays close to the full-precision model, ranks first among open-weight models of its size on independent indices, needs about 28 GB, and leaves room for 128K of context.
 - **MTP speculative decoding.** Qwen3.8 ships a multi-token-prediction draft head as a 1.4 GB sidecar. llama.cpp drafts with it and verifies in parallel, which is where the dense model gets its usable speed: about 19 tok/s at short context instead of about 14 without it.
 
@@ -296,7 +296,6 @@ Or run [check-health.sh](../check-health.sh) on the box, or ask your agent: "che
 | Kilo: "Unable to connect. Is the computer able to access the url?" while `curl` from a terminal works | macOS Local Network privacy permission | System Settings → Privacy & Security → Local Network → enable Visual Studio Code, restart VS Code |
 | SSH refused for 2 minutes after boot with "System is booting up" | `systemd-networkd-wait-online` waiting on an unplugged wired port | Harmless. To remove: add `optional: true` under `eno1` in `/etc/netplan/*.yaml` and `sudo netplan apply` |
 | SSH session dies mid-script | `pkill -f` matched your own command line | Kill by PID from `pgrep -x` |
-| General instability | Non-stock kernel | Stock kernel only |
 
 ## Security note
 
