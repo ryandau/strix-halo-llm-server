@@ -24,9 +24,7 @@ The hardware, once. The model and all the software are free.
    ```
    Read AGENTS.md and docs/build-guide.md. The box is <user>@<box-ip>. Build it.
    ```
-3. **Open VS Code.** Pick the model in Kilo Code and start working.
-
-Already built the earlier version of this (MiniMax M2.7)? [Upgrade guide](docs/upgrade-guide.md).
+3. **Open VS Code.** Pick the model in [Kilo Code](https://kilocode.ai) and start working.
 
 ## Hardware
 
