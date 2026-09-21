@@ -1,4 +1,4 @@
-# Your own coding AI on a small desktop PC
+# Run your own coding AI on a Strix Halo mini PC
 
 This guide turns a [GMKtec EVO-X2](https://www.gmktec.com/products/amd-ryzen%E2%84%A2-ai-max-395-evo-x2-ai-mini-pc?variant=46826048585882) (or any PC with the same AMD Ryzen AI Max+ 395 chip and 128 GB of memory) into a coding assistant that runs entirely in your home or office. It works inside VS Code, and an AI agent does the setup for you from a single instruction.
 
