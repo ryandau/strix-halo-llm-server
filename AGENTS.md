@@ -14,7 +14,7 @@ You are driving a remote Linux inference server over SSH from the user's worksta
 - Never touch the interface that carries the default route (`ip route show default`). No `ip link set down`, no regulatory-domain changes, no driver reloads. If the box is Wi-Fi-only, losing that link means someone has to walk over and press the power button.
 - Any job that may outlive an SSH session (model download, benchmark, long apt run) runs inside a named `tmux` session, logging to a file, and writes a `DONE_EXIT=<code>` marker line to that log on exit. Poll the marker. Never assume silence is success.
 - Never delete a model that is currently serving until its replacement has passed the acceptance checks in the guide. Download new models into a separate directory.
-- Before a service swap, stage the new unit file in the home directory, then install it. Keep the old unit's ExecStart line in your notes for rollback.
+- Before changing a running service's unit file, stage the new file in the home directory, then install it. Keep the current ExecStart line in your notes so you can roll back.
 - Do not upgrade the kernel or reboot unless the guide's phase calls for it or the user asks. If a reboot is needed, say so and let the user choose the moment. A restart of the model server drops the prompt cache, so ask before restarting while the user is mid-task.
 - Leave the box tidy: remove tarballs, download logs, scratch scripts, `/tmp` test files and staging unit files before you report done.
 
@@ -32,7 +32,7 @@ Slowness on this platform is almost always prompt processing, not generation. Ch
 
 ## Workstation side
 
-You may edit `~/.config/kilo/kilo.jsonc` and, for legacy setups, `~/.continue/config.yaml` on the workstation. Back up the existing file first and use the templates in [client/](client/). Never remove the `interleaved` block from a Kilo model entry or switch a Continue entry back to `provider: openai`. Both break the reasoning round trip and the model gets visibly dumber.
+You may edit `~/.config/kilo/kilo.jsonc` on the workstation. Back up the existing file first and use the template in [client/](client/). Never remove the `interleaved` block from the model entry. It carries the model's reasoning between turns, and without it the model gets visibly dumber.
 
 ## Reporting
 

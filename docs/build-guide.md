@@ -2,7 +2,6 @@
 
 | | |
 |---|---|
-| **Version** | 4.0 |
 | **Last verified** | September 2026 |
 | **Applies to** | AMD Ryzen AI Max+ 395 ("Strix Halo") systems with 128 GB unified memory, such as the GMKtec EVO-X2, Framework Desktop, and HP Z2 Mini G1a |
 | **Target** | Ubuntu Server 26.04 LTS, llama.cpp b11057 or newer, Qwen3.8-27B UD-Q6_K with MTP speculative decoding, Kilo Code |
@@ -15,10 +14,10 @@ A headless server that boots into a llama.cpp endpoint serving Qwen3.8-27B (dens
 
 ## Design decisions
 
-- **Vulkan instead of ROCm.** ROCm on gfx1151 has a history of kernel-version pain and out-of-memory failures near the carve-out limit. The RADV driver ships with Ubuntu and works immediately. ROCm wins on prompt processing by 20 to 40 per cent in published tests, Vulkan wins on generation.
+- **Vulkan instead of ROCm.** ROCm on gfx1151 is sensitive to kernel versions and fails with out-of-memory errors near the carve-out limit. The RADV driver ships with Ubuntu and works immediately. ROCm wins on prompt processing by 20 to 40 per cent in published tests, Vulkan wins on generation.
 - **llama.cpp directly, no wrapper.** One binary, one systemd unit, full control over the flags that matter: KV-cache type, batch sizes, speculative decoding, load mode.
-- **Ubuntu Server, stock kernel.** Custom kernels are the main cause of instability on this platform. Two kernel parameters are added in Phase 5.
-- **A dense 27B at Q6, not a 230B MoE at Q3.** The previous version of this repo ran MiniMax M2.7 squeezed to 3.3 bits per weight because that was what fit. MiniMax's architecture (no shared expert) degrades badly under quantisation, and independent measurements put its Q3 quants far from the full model. Qwen3.8-27B at Q6_K is close to lossless, scores higher than full-precision M2.7 on independent indices, needs 28 GB instead of 100 GB, and has room for 128K of context. It generates more slowly (17 against 21 tok/s at 20K context) and the trade is worth it.
+- **Ubuntu Server, stock kernel.** Custom kernels are the main cause of instability on this platform. One kernel parameter is added in Phase 5.
+- **A dense 27B at Q6.** On this hardware the choice is between a dense model of this size at a high-fidelity quant and a much larger mixture-of-experts model squeezed to 3 bits per weight. Quantisation that aggressive costs real quality, and the MoE architectures that fit are the ones that suffer most from it. Qwen3.8-27B at Q6_K stays close to the full-precision model, ranks first among open-weight models of its size on independent indices, needs about 28 GB, and leaves room for 128K of context.
 - **MTP speculative decoding.** Qwen3.8 ships a multi-token-prediction draft head as a 1.4 GB sidecar. llama.cpp drafts with it and verifies in parallel, which is where the dense model gets its usable speed: about 19 tok/s at short context instead of about 14 without it.
 
 ## Phase 0: Preflight
@@ -42,7 +41,7 @@ The installer allocates only about 100 GB. Expand the root filesystem online, th
 ```bash
 sudo -n lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv && sudo -n resize2fs /dev/ubuntu-vg/ubuntu-lv
 sudo -n apt-get update && sudo -n DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-sudo -n apt-get install -y mesa-vulkan-drivers vulkan-tools radeontop libgomp1 tmux python3-pip curl iw
+sudo -n apt-get install -y mesa-vulkan-drivers vulkan-tools radeontop libgomp1 tmux curl iw
 sudo -n usermod -aG render,video <user>
 ```
 
@@ -68,7 +67,7 @@ mkdir -p llama-$B && tar -xzf llama-$B-bin-ubuntu-vulkan-x64.tar.gz -C llama-$B 
 ~/llama/llama-$B/llama-server --help | grep -cE -- "--spec-type|--load-mode|--device "
 ```
 
-**Acceptance:** `--version` prints the build number and the grep prints `3` (these flags changed names in mid-2026 and the unit file below depends on the new ones). A missing shared library means an apt package. `libgomp.so.1` is `libgomp1`.
+**Acceptance:** `--version` prints the build number and the grep prints `3` (the unit file below depends on those three flags). A missing shared library means an apt package. `libgomp.so.1` is `libgomp1`.
 
 ## Phase 3: Model download
 
@@ -111,14 +110,14 @@ awk '{printf "vram %.1f GB\n", $1/1e9}' /sys/class/drm/card*/device/mem_info_vra
 | Flag | Why |
 |---|---|
 | `--device Vulkan0` | Refuse to start if the GPU is not available, instead of silently running on the CPU, which is far slower. Matters at boot, when llama-server can start before amdgpu is ready |
-| `--model-draft ... --spec-type draft-mtp --spec-draft-n-max 3` | MTP speculative decoding with the sidecar draft head. Generation went from 15.1 to 17.0 tok/s at 20K context when the draft length was raised from 2 to 3. About 46 per cent of drafted tokens are accepted |
+| `--model-draft ... --spec-type draft-mtp --spec-draft-n-max 3` | MTP speculative decoding with the sidecar draft head. Draft length 3 gives about 17 tok/s at 20K context. About 46 per cent of drafted tokens are accepted |
 | `-ngl 999` | All layers on the GPU |
-| `-c 131072` | 128K context. The hybrid Gated DeltaNet architecture keeps the KV cache small (about 4 GB at 128K with q8_0), so this costs little memory. The clients cap sessions lower, see "What to expect" |
+| `-c 131072` | 128K context. The hybrid Gated DeltaNet architecture keeps the KV cache small (about 4 GB at 128K with q8_0), so this costs little memory. The client caps sessions lower, see "What to expect" |
 | `--parallel 1` | One slot gets the whole context instead of several sharing it |
 | `-b 2048 -ub 512` | Micro-batch of 512 is the stable setting for long prompt processing on RADV. Larger values raise the risk of a GPU timeout |
 | `--cache-type-k/v q8_0` | KV cache at 8 bits. Small saving here, kept for consistency with long sessions |
 | `--cache-ram 8192` | Host-RAM prompt cache budget. The OS has only the memory outside the BIOS carve-out, so do not raise this far |
-| `--load-mode none` | Load into memory rather than mmap. The old `--no-mmap` flag, renamed in 2026. Loading takes 7 seconds |
+| `--load-mode none` | Load into memory rather than mmap. Loading takes 7 seconds |
 | `--jinja` | Enables the chat template, including the reasoning channel and tool-call parsing |
 | `--reasoning-budget 8192` | Caps thinking at 8K tokens so a hard question cannot consume a whole reply |
 | `--temp 1.0 --top-p 0.95 --top-k 20 --min-p 0` | Qwen's recommended sampling for thinking mode |
@@ -168,7 +167,7 @@ until curl -s -m 3 localhost:8080/health | grep -q ok; do sleep 5; done; systemc
 
 ### 5b. GPU watchdog
 
-When the GPU compute queue times out and resets (it did during the reference build, at 90K tokens of context), llama-server keeps running and `/health` keeps returning `ok`, but every request fails with `decode() failed: vk::Queue::submit: ErrorDeviceLost`. `Restart=on-failure` never fires because the process never exits. A one-minute timer watches the journal for that string and restarts the service.
+When the GPU compute queue times out and resets, which happens at deep context on this platform, llama-server keeps running and `/health` keeps returning `ok`, but every request fails with `decode() failed: vk::Queue::submit: ErrorDeviceLost`. `Restart=on-failure` never fires because the process never exits. A one-minute timer watches the journal for that string and restarts the service.
 
 ```bash
 cat > ~/qwen38-watch.service <<'EOF'
@@ -197,9 +196,9 @@ systemctl list-timers qwen38-watch.timer --no-pager
 
 ### 5c. Platform fixes
 
-**GPU timeout.** Kernel 7.x cut the amdgpu compute-queue timeout to 2 seconds. A long attention step at deep context can exceed that, and the driver then resets the queue and the model is lost until restart. Raising the compute timeout to 60 seconds (the second value, the four being gfx, compute, sdma and video) fixed it on the reference box.
+**GPU timeout.** The amdgpu driver's default compute-queue timeout is 2 seconds. A long attention step at deep context can exceed that, and the driver then resets the queue and the model is lost until restart. Raise the compute timeout to 60 seconds (the second value, the four being gfx, compute, sdma and video).
 
-**Wi-Fi power saving.** If the box's uplink is Wi-Fi, power saving adds 50 to 120 ms of latency and heavy jitter to every packet. Measured from the workstation: 55 ms average with it on, 11 ms with it off. Skip this block if the default route is wired.
+**Wi-Fi power saving.** If the box's uplink is Wi-Fi, power saving adds 50 to 120 ms of latency and heavy jitter to every packet. Measured from a workstation: 55 ms average with it on, 11 ms with it off. Skip this block if the default route is wired.
 
 ```bash
 sudo -n sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 amdgpu.lockup_timeout=10000,60000,10000,10000"/' /etc/default/grub
@@ -220,30 +219,12 @@ systemctl is-active qwen38 qwen38-watch.timer; curl -s localhost:8080/health
 
 **Acceptance:** the kernel parameter is in `/proc/cmdline`, `Power save: off` on Wi-Fi boxes, both units `active`, health ok, and `journalctl -u qwen38 -b | grep listening` shows port 8080.
 
-## Phase 6: Ollama sidecar (optional, Continue only)
-
-Kilo Code needs nothing else. If the user still uses Continue and wants inline autocomplete and codebase embeddings, two small models on Ollama sit beside the main server in about 1.3 GB. Otherwise skip this phase.
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-sudo -n mkdir -p /etc/systemd/system/ollama.service.d
-printf '[Service]\nEnvironment="OLLAMA_HOST=0.0.0.0"\nEnvironment="OLLAMA_VULKAN=1"\nEnvironment="OLLAMA_CONTEXT_LENGTH=32768"\n' | sudo -n tee /etc/systemd/system/ollama.service.d/override.conf
-sudo -n systemctl daemon-reload && sudo -n systemctl restart ollama
-ollama pull qwen2.5-coder:1.5b-base && ollama pull nomic-embed-text
-curl -s localhost:11434/api/generate -d '{"model":"qwen2.5-coder:1.5b-base","prompt":"def fib(n):\n    ","stream":false,"options":{"num_predict":30}}' | python3 -c 'import sys,json;d=json.load(sys.stdin);print("tps=%.0f"%(d["eval_count"]/(d["eval_duration"]/1e9)))'
-curl -s localhost:11434/api/embed -d '{"model":"nomic-embed-text","input":"hello"}' | python3 -c 'import sys,json;print("dims",len(json.load(sys.stdin)["embeddings"][0]))'
-curl -s localhost:8080/health
-```
-
-**Acceptance:** autocomplete at or above 40 tok/s, `dims 768`, and main server health still ok.
-
-## Phase 7: Workstation
+## Phase 6: Workstation
 
 On the workstation, not the box:
 
-1. Kilo Code: back up `~/.config/kilo/kilo.jsonc` if it exists, then copy [client/kilo.jsonc](../client/kilo.jsonc) over it with `BOX_IP` replaced. The file is JSONC, so comments are allowed.
-2. Continue (legacy, optional): back up `~/.continue/config.yaml`, then copy [client/continue.config.yaml](../client/continue.config.yaml) with `BOX_IP` replaced. Remove the two Ollama entries if Phase 6 was skipped.
-3. Confirm end to end from the workstation:
+1. Back up `~/.config/kilo/kilo.jsonc` if it exists, then copy [client/kilo.jsonc](../client/kilo.jsonc) over it with `BOX_IP` replaced. The file is JSONC, so comments are allowed.
+2. Confirm end to end from the workstation:
 
 ```bash
 curl -s http://<box-ip>:8080/v1/chat/completions -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"Reply with exactly: READY"}],"max_tokens":2000}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["choices"][0]["message"]["content"].strip())'
@@ -256,7 +237,7 @@ Two things about Kilo worth telling the user:
 - Its fixed prompt (system prompt plus tool schemas) is about 14K tokens. The first request of every session pays about a minute of prompt processing. Later turns hit the cache and are fast.
 - Kilo phones home to its own services by default. To turn that off: set the VS Code setting `telemetry.telemetryLevel` to `off`, and set the environment variables `KILO_TELEMETRY_LEVEL=off`, `KILO_DISABLE_SHARE=1` and `KILO_DISABLE_SESSION_INGEST=1` for VS Code's process (on macOS, `launchctl setenv` from a LaunchAgent). The shipped config already sets `"share": "disabled"`. Do not sign in to a Kilo account, because session upload requires one.
 
-## Phase 8: Tidy and report
+## Phase 7: Tidy and report
 
 On the box: no tarballs in `~/llama`, nothing of yours in `/tmp`, no staging unit files in the home directory, no tmux sessions, `sudo -n apt-get clean`. Then report:
 
@@ -272,7 +253,6 @@ On the box: no tarballs in `~/llama`, nothing of yours in `/tmp`, no staging uni
 | Kernel parameter present | |
 | Watchdog timer active | |
 | Wi-Fi power save | |
-| Ollama models (if any) | |
 | Client config | path and backup path |
 | Left for the user | reboot pending? anything skipped and why |
 
@@ -280,13 +260,13 @@ On the box: no tarballs in `~/llama`, nothing of yours in `/tmp`, no staging uni
 
 **Quality.** Qwen3.8-27B scores 34 on the [Artificial Analysis Intelligence Index](https://artificialanalysis.ai/models/qwen3-8-27b), the highest of 142 open-weight models in its size class. The vendor reports 61.7 on SWE-bench Pro, 73.0 on Terminal-Bench 2.1 and 90.3 on LiveCodeBench v6. This build runs Q6_K. In an independent Terminal-Bench run, the smaller Q4_K_M quant of this model matched the full-precision version, and Q6_K is closer still, so those numbers largely apply. Frontier cloud models are still ahead on long agentic runs.
 
-**Knowledge.** A 27B model knows less trivia than a 230B one. For work that depends on obscure detail (register maps, protocol specifics, device-tree bindings), put the datasheet or header in the context rather than relying on recall. Context is cheap on this model.
+**Knowledge.** A 27B model has limited recall of obscure detail. For work that depends on it (register maps, protocol specifics, device-tree bindings), put the datasheet or header in the context rather than relying on memory. Context is cheap on this model.
 
 **Speed.** Generation runs at about 19 tok/s at short context and 17 tok/s with 20K tokens in the window. Prompt processing runs at about 260 tok/s, so a 20K-token prompt waits about 80 seconds before the first token. The prefix cache removes that cost when a session grows by appending.
 
-**The context cliff.** Past about 85K tokens, prompt processing on this hardware collapses to 3 or 4 tok/s and every turn pays several seconds even for a short message. The shipped client configs cap sessions at 80K so compaction happens first. Start a fresh session per task, and treat 50K tokens as the point where a session has become expensive. `journalctl -u qwen38 -f | grep print_timing` shows exactly where the time goes.
+**The context cliff.** Past about 85K tokens, prompt processing on this hardware collapses to 3 or 4 tok/s and every turn pays several seconds even for a short message. The shipped client config caps sessions at 80K so compaction happens first. Start a fresh session per task, and treat 50K tokens as the point where a session has become expensive. `journalctl -u qwen38 -f | grep print_timing` shows exactly where the time goes.
 
-**Reasoning.** The model thinks before it answers, typically 500 to 3,000 tokens. Clients must send that reasoning back with the conversation (Kilo does with the shipped config, Continue only with `provider: deepseek`). Without it the model loses the thread between tool calls and looks much less capable than it is.
+**Reasoning.** The model thinks before it answers, typically 500 to 3,000 tokens. The client must send that reasoning back with the conversation, which the shipped Kilo config does through its `interleaved` setting. Without it the model loses the thread between tool calls and looks much less capable than it is.
 
 ## Day to day
 
@@ -306,12 +286,11 @@ Or run [check-health.sh](../check-health.sh) on the box, or ask your agent: "che
 |---|---|---|
 | `No space left on device` | Installer's 100 GB LVM default | Phase 1 |
 | `error while loading shared libraries: libgomp.so.1` | Prebuilt binary dependency | `sudo apt install libgomp1` |
-| `invalid argument: --no-mmap` | Flag renamed in 2026 builds | Use `--load-mode none` |
 | `invalid device: Vulkan0` at start | GPU not initialised yet, or driver missing | Can happen at boot if amdgpu is not ready yet, and the unit retries. If it persists, recheck the Phase 1 driver check and group membership |
 | `decode() failed: vk::Queue::submit: ErrorDeviceLost` | GPU compute queue timed out and reset. Kernel log shows `ring comp_1.2.0 timeout` | The watchdog restarts the service within a minute. If it recurs, confirm `amdgpu.lockup_timeout` is in `/proc/cmdline` (Phase 5c) and keep sessions under 80K tokens |
-| Every request takes 5+ seconds even when short | Session past the 85K context cliff | Start a new session and check the client context caps |
+| Every request takes 5+ seconds even when short | Session past the 85K context cliff | Start a new session and check the client context cap |
 | Empty reply, `finish_reason: length` | Reasoning consumed the token budget | Raise `max_tokens` to 8192 or more in the client |
-| Model seems to forget what it was doing between tool calls | Client not sending `reasoning_content` back | Kilo: check `"interleaved"` in the model entry. Continue: `provider: deepseek` with a trailing `/` on `apiBase` |
+| Model seems to forget what it was doing between tool calls | Client not sending `reasoning_content` back | Check the `"interleaved"` block in the Kilo model entry |
 | 50 to 120 ms ping to the box, jittery | Wi-Fi power saving | Phase 5c udev rule, or use a cable |
 | Box vanishes from the network entirely | Wi-Fi-only uplink lost (driver fault, regulatory-domain change, access point restart) | Power-cycle, then plug in a cable, which removes the failure mode |
 | Kilo: "Unable to connect. Is the computer able to access the url?" while `curl` from a terminal works | macOS Local Network privacy permission | System Settings → Privacy & Security → Local Network → enable Visual Studio Code, restart VS Code |
@@ -321,7 +300,7 @@ Or run [check-health.sh](../check-health.sh) on the box, or ask your agent: "che
 
 ## Security note
 
-As built, the model server accepts requests from any device on the LAN with no API key, and the tool calls a client makes on its behalf run on the workstation with the user's permissions. That is fine on a network you control. On a shared network, add `--api-key <random>` to the unit and the matching key to the client configs, or bind `--host 127.0.0.1` and reach the box through an SSH tunnel.
+As built, the model server accepts requests from any device on the LAN with no API key, and the tool calls a client makes on its behalf run on the workstation with the user's permissions. That is fine on a network you control. On a shared network, add `--api-key <random>` to the unit and the matching key to the client config, or bind `--host 127.0.0.1` and reach the box through an SSH tunnel.
 
 ## Hardware reference
 
