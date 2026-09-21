@@ -110,14 +110,14 @@ awk '{printf "vram %.1f GB\n", $1/1e9}' /sys/class/drm/card*/device/mem_info_vra
 
 | Flag | Why |
 |---|---|
-| `--device Vulkan0` | Refuse to start if the GPU is not available, instead of silently running on the CPU at a tenth of the speed. Matters at boot, when llama-server can start before amdgpu is ready |
-| `--model-draft ... --spec-type draft-mtp --spec-draft-n-max 3` | MTP speculative decoding with the sidecar draft head. Generation went from 15.1 to 17.0 tok/s at 20K context when the draft length was raised from 2 to 3; about 46 per cent of drafted tokens are accepted |
+| `--device Vulkan0` | Refuse to start if the GPU is not available, instead of silently running on the CPU, which is far slower. Matters at boot, when llama-server can start before amdgpu is ready |
+| `--model-draft ... --spec-type draft-mtp --spec-draft-n-max 3` | MTP speculative decoding with the sidecar draft head. Generation went from 15.1 to 17.0 tok/s at 20K context when the draft length was raised from 2 to 3. About 46 per cent of drafted tokens are accepted |
 | `-ngl 999` | All layers on the GPU |
-| `-c 131072` | 128K context. The hybrid Gated DeltaNet architecture keeps the KV cache small (about 4 GB at 128K with q8_0), so this costs little memory. The clients cap sessions lower; see "What to expect" |
+| `-c 131072` | 128K context. The hybrid Gated DeltaNet architecture keeps the KV cache small (about 4 GB at 128K with q8_0), so this costs little memory. The clients cap sessions lower, see "What to expect" |
 | `--parallel 1` | One slot gets the whole context instead of several sharing it |
-| `-b 2048 -ub 512` | Micro-batch of 512 is the stable setting for long prompt processing on RADV; larger values raise the risk of a GPU timeout |
-| `--cache-type-k/v q8_0` | KV cache at 8 bits. Small saving here; kept for consistency with long sessions |
-| `--cache-ram 8192` | Host-RAM prompt cache budget. Sessions under about 60K tokens fit. The OS has only the memory outside the BIOS carve-out, so do not raise this far |
+| `-b 2048 -ub 512` | Micro-batch of 512 is the stable setting for long prompt processing on RADV. Larger values raise the risk of a GPU timeout |
+| `--cache-type-k/v q8_0` | KV cache at 8 bits. Small saving here, kept for consistency with long sessions |
+| `--cache-ram 8192` | Host-RAM prompt cache budget. The OS has only the memory outside the BIOS carve-out, so do not raise this far |
 | `--load-mode none` | Load into memory rather than mmap. The old `--no-mmap` flag, renamed in 2026. Loading takes 7 seconds |
 | `--jinja` | Enables the chat template, including the reasoning channel and tool-call parsing |
 | `--reasoning-budget 8192` | Caps thinking at 8K tokens so a hard question cannot consume a whole reply |
@@ -139,7 +139,7 @@ Prompt-processing benchmark: send a prompt of about 20K tokens with `max_tokens`
 
 ## Phase 5: Service, watchdog and platform fixes
 
-Three things go in here: the systemd unit, a watchdog for the fault the unit cannot see, and two platform fixes that need a reboot.
+Three things go in here: the systemd unit, a watchdog for the fault the unit cannot see, and two platform fixes, one of which needs a reboot.
 
 ### 5a. The unit
 
@@ -278,7 +278,7 @@ On the box: no tarballs in `~/llama`, nothing of yours in `/tmp`, no staging uni
 
 ## What to expect
 
-**Quality.** Qwen3.8-27B scores 34 on the [Artificial Analysis Intelligence Index](https://artificialanalysis.ai/models/qwen3-8-27b), the highest of 142 open-weight models in its size class. The vendor reports 61.7 on SWE-bench Pro, 73.0 on Terminal-Bench 2.1 and 90.3 on LiveCodeBench v6. This build runs Q6_K, which independent KL-divergence measurements put within a few per cent of the full model, so those numbers largely apply. Frontier cloud models are still ahead on long agentic runs.
+**Quality.** Qwen3.8-27B scores 34 on the [Artificial Analysis Intelligence Index](https://artificialanalysis.ai/models/qwen3-8-27b), the highest of 142 open-weight models in its size class. The vendor reports 61.7 on SWE-bench Pro, 73.0 on Terminal-Bench 2.1 and 90.3 on LiveCodeBench v6. This build runs Q6_K. In an independent Terminal-Bench run, the smaller Q4_K_M quant of this model matched the full-precision version, and Q6_K is closer still, so those numbers largely apply. Frontier cloud models are still ahead on long agentic runs.
 
 **Knowledge.** A 27B model knows less trivia than a 230B one. For work that depends on obscure detail (register maps, protocol specifics, device-tree bindings), put the datasheet or header in the context rather than relying on recall. Context is cheap on this model.
 
@@ -307,13 +307,13 @@ Or run [check-health.sh](../check-health.sh) on the box, or ask your agent: "che
 | `No space left on device` | Installer's 100 GB LVM default | Phase 1 |
 | `error while loading shared libraries: libgomp.so.1` | Prebuilt binary dependency | `sudo apt install libgomp1` |
 | `invalid argument: --no-mmap` | Flag renamed in 2026 builds | Use `--load-mode none` |
-| `invalid device: Vulkan0` at start | GPU not initialised yet, or driver missing | Normal at boot for one or two restarts (the unit retries). Persistent: recheck Phase 1 driver check and group membership |
+| `invalid device: Vulkan0` at start | GPU not initialised yet, or driver missing | Can happen at boot if amdgpu is not ready yet, and the unit retries. If it persists, recheck the Phase 1 driver check and group membership |
 | `decode() failed: vk::Queue::submit: ErrorDeviceLost` | GPU compute queue timed out and reset. Kernel log shows `ring comp_1.2.0 timeout` | The watchdog restarts the service within a minute. If it recurs, confirm `amdgpu.lockup_timeout` is in `/proc/cmdline` (Phase 5c) and keep sessions under 80K tokens |
-| Every request takes 5+ seconds even when short | Session past the 85K context cliff | Start a new session; check client context caps |
+| Every request takes 5+ seconds even when short | Session past the 85K context cliff | Start a new session and check the client context caps |
 | Empty reply, `finish_reason: length` | Reasoning consumed the token budget | Raise `max_tokens` to 8192 or more in the client |
 | Model seems to forget what it was doing between tool calls | Client not sending `reasoning_content` back | Kilo: check `"interleaved"` in the model entry. Continue: `provider: deepseek` with a trailing `/` on `apiBase` |
-| 50 to 120 ms ping to the box, jittery | Wi-Fi power saving | Phase 5c udev rule; or use a cable |
-| Box vanishes from the network entirely | Wi-Fi-only uplink lost (driver fault, regulatory-domain change, access point restart) | Power-cycle; then plug in a cable, which removes the failure mode |
+| 50 to 120 ms ping to the box, jittery | Wi-Fi power saving | Phase 5c udev rule, or use a cable |
+| Box vanishes from the network entirely | Wi-Fi-only uplink lost (driver fault, regulatory-domain change, access point restart) | Power-cycle, then plug in a cable, which removes the failure mode |
 | Kilo: "Unable to connect. Is the computer able to access the url?" while `curl` from a terminal works | macOS Local Network privacy permission | System Settings → Privacy & Security → Local Network → enable Visual Studio Code, restart VS Code |
 | SSH refused for 2 minutes after boot with "System is booting up" | `systemd-networkd-wait-online` waiting on an unplugged wired port | Harmless. To remove: add `optional: true` under `eno1` in `/etc/netplan/*.yaml` and `sudo netplan apply` |
 | SSH session dies mid-script | `pkill -f` matched your own command line | Kill by PID from `pgrep -x` |
