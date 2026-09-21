@@ -1,14 +1,17 @@
-# Continue config for the Strix Halo box. The agent copies this to ~/.continue/config.yaml
-# with BOX_IP substituted. Keep maxTokens high: MiniMax M2.7 reasons before it answers and a
-# small budget is consumed entirely by reasoning, returning an empty reply.
+# Legacy Continue config for the Strix Halo box. Continue is no longer maintained (2.0.0 was its
+# final release); Kilo Code is the supported client. Kept for people who still use it.
+#
+# provider: deepseek, not openai. Continue only sends the model's reasoning back to the server for
+# the deepseek provider, and the Qwen chat template relies on it between tool calls. The trailing
+# slash on apiBase is required with this provider.
 name: Main Config
 version: 1.0.0
 schema: v1
 models:
-  - name: MiniMax M2.7
-    provider: openai
-    model: MiniMax-M2.7
-    apiBase: http://BOX_IP:8080/v1
+  - name: Qwen3.8 27B (local)
+    provider: deepseek
+    model: Qwen3.8-27B
+    apiBase: http://BOX_IP:8080/v1/
     apiKey: none
     roles:
       - chat
@@ -17,11 +20,12 @@ models:
     capabilities:
       - tool_use
     defaultCompletionOptions:
-      contextLength: 32768
-      maxTokens: 8192
+      contextLength: 81920
+      maxTokens: 12288
       temperature: 1.0
       topP: 0.95
-      topK: 40
+      topK: 20
+  # The two entries below need the optional Ollama sidecar (build guide Phase 6).
   - name: Qwen2.5-Coder 1.5B
     provider: ollama
     model: qwen2.5-coder:1.5b-base

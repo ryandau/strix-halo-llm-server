@@ -2,9 +2,15 @@
 
 This is the only part that needs you at the keyboard. About 15 minutes. When the last check passes, unplug the monitor; the rest happens over the network.
 
-## 1. BIOS (optional)
+## 1. BIOS
 
-Power on and press `Del` or `F7`. If you can find **UMA Frame Buffer Size**, set it to 96 GB. The build works either way.
+Nothing to change. The build works with the default **UMA Frame Buffer Size**; the model uses about 28 GB of GPU memory, and any carve-out of 32 GB or more is enough. If you set it to 96 GB for the previous version of this repo, leave it.
+
+<details>
+<summary>Advanced: running models larger than the carve-out</summary>
+
+Linux can give the GPU memory beyond the BIOS carve-out through the kernel's GTT pool. AMD's guidance for Strix Halo is a small carve-out (512 MB to 2 GB) plus the kernel parameters `ttm.pages_limit=31457280 ttm.page_pool_size=31457280` (120 GiB). Lower the carve-out first; the kernel does not cap GTT against it, and 96 GB carved out plus 120 GiB of GTT over-commits the machine. This build does not need it and it has not been tested on the reference box.
+</details>
 
 ## 2. Install Ubuntu Server
 
@@ -15,17 +21,17 @@ Power on and press `Del` or `F7`. If you can find **UMA Frame Buffer Size**, set
 
 The installer only uses part of the disk. That gets fixed later, automatically.
 
-## 3. Find the box's address
+## 3. Plug in a network cable if you can
 
-Log in and run:
+Wi-Fi works, but a cable is the difference between a server you never think about and one you occasionally walk over to. With Wi-Fi as the only link, a driver hiccup or a regulatory-domain change takes the box off the network and there is no other way in. The build guide turns off Wi-Fi power saving, which otherwise adds 50 to 120 ms to every request.
+
+Then log in and run:
 
 ```console
 $ ip a | grep "inet 192"
 ```
 
 Write down the address. In your router, pin it to this machine so it never changes.
-
-A network cable is faster than Wi-Fi for the 94 GB download, but Wi-Fi works.
 
 ## 4. Let the agent run admin commands
 
@@ -51,7 +57,11 @@ $ ssh -o BatchMode=yes <user>@<box-ip> 'sudo -n true && echo READY'
 
 You'll type the box password once. `READY` means you're done. Anything else, repeat this step.
 
-## 6. Get the repo
+## 6. Install Kilo Code
+
+In VS Code, install the **Kilo Code** extension. On macOS, the first time it tries to reach the box it will be blocked until you allow it under **System Settings → Privacy & Security → Local Network** (enable Visual Studio Code, then restart VS Code). The build guide writes its config.
+
+## 7. Get the repo
 
 ```console
 $ git clone https://github.com/ryandau/strix-halo-llm-server.git

@@ -1,0 +1,34 @@
+{
+  // Kilo Code config for the Strix Halo box. The agent copies this to ~/.config/kilo/kilo.jsonc
+  // on the workstation with BOX_IP substituted. Kilo is built on the OpenCode core, so this is
+  // an OpenCode-style provider block.
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "strixhalo/Qwen3.8-27B",
+  // never upload sessions to Kilo's share service
+  "share": "disabled",
+  "provider": {
+    "strixhalo": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Strix Halo (local)",
+      "options": {
+        "baseURL": "http://BOX_IP:8080/v1",
+        "apiKey": "none"
+      },
+      "models": {
+        "Qwen3.8-27B": {
+          "name": "Qwen3.8 27B (local)",
+          "tool_call": true,
+          "reasoning": true,
+          // send the model's thinking back on every turn; the chat template re-inserts it
+          "interleaved": { "field": "reasoning_content" },
+          "temperature": true,
+          // the server allows 131072, but prompt processing on this hardware collapses past
+          // about 85K tokens; 81920 makes Kilo compact the session well before that
+          "limit": { "context": 81920, "output": 16384 },
+          // Qwen's recommended sampling for thinking mode
+          "options": { "temperature": 1.0, "top_p": 0.95, "top_k": 20 }
+        }
+      }
+    }
+  }
+}
