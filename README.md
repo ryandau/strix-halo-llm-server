@@ -1,27 +1,38 @@
-# Local coding AI on a Strix Halo mini PC
+# Your own coding AI on a small desktop PC
 
-Self-hosted Qwen3.8-27B on a [128 GB AMD Ryzen AI Max+ 395](https://www.gmktec.com/products/amd-ryzen%E2%84%A2-ai-max-395-evo-x2-ai-mini-pc?variant=46826048585882) box, served by llama.cpp on Vulkan and used from VS Code through Kilo Code. Set up by an AI agent from one prompt.
+This guide turns a [GMKtec EVO-X2](https://www.gmktec.com/products/amd-ryzen%E2%84%A2-ai-max-395-evo-x2-ai-mini-pc?variant=46826048585882) (or any PC with the same AMD Ryzen AI Max+ 395 chip and 128 GB of memory) into a coding assistant that runs entirely in your home or office. It works inside VS Code, and an AI agent does the setup for you from a single instruction.
 
-**What you get:** a 128K-context coding model answering on your own network at 17 to 19 tokens a second, with tool calling that works in an agent harness. No cloud, no subscription, works offline.
+**What you get**
 
-**How good is it?** Qwen3.8-27B scores 34 on the [Artificial Analysis Intelligence Index](https://artificialanalysis.ai/models/qwen3-8-27b), first of 142 open-weight models in its size class (median 8). The vendor reports 61.7 on SWE-bench Pro and 90.3 on LiveCodeBench v6. This build runs it at Q6_K, which is close to lossless, so those numbers largely carry over. It is good at everyday coding, shell and systems work, and multi-step agent tasks up to about 60K tokens of context. Past that it slows down sharply.
+- A capable coding assistant that answers from a box on your own network.
+- No subscription, no usage limits, works with the internet off.
+- It writes and edits code, runs commands, and reads your project, the same way the cloud tools do.
+- It remembers a long working session, roughly the length of a short novel, before it needs to start fresh.
+
+**How good is it?**
+
+The model is Qwen3.8-27B. Among free, downloadable models of its size it currently ranks first on the [Artificial Analysis](https://artificialanalysis.ai/models/qwen3-8-27b) leaderboard. It handles everyday coding, shell scripting and systems work well, and can carry out multi-step tasks on its own. Frontier models are still stronger on long, complicated jobs. It answers at about 17 to 19 words a second, a comfortable reading pace.
+
+**What it costs**
+
+The hardware, once. The model and all the software are free.
 
 ## Three steps
 
-1. **Set up the box.** About 15 minutes at the keyboard. [Checklist](docs/ready-state.md)
+1. **Set up the box.** About 15 minutes at the keyboard, mostly installing Ubuntu. [Checklist](docs/ready-state.md)
 2. **Hand it to your AI agent.** Paste one line, come back in about an hour.
    ```
    Read AGENTS.md and docs/build-guide.md. The box is <user>@<box-ip>. Build it.
    ```
-3. **Open VS Code.** The model is in Kilo Code's model picker.
+3. **Open VS Code.** Pick the model in Kilo Code and start working.
 
-Already have a box from the previous version of this repo (MiniMax M2.7)? [Upgrade guide](docs/upgrade-guide.md).
+Already built the earlier version of this (MiniMax M2.7)? [Upgrade guide](docs/upgrade-guide.md).
 
 ## Hardware
 
-Any 128 GB Ryzen AI Max+ 395 machine. Built and tested on a GMKtec EVO-X2. The model itself needs only about 28 GB of GPU memory, so a 64 GB machine would also work.
+Any PC with an AMD Ryzen AI Max+ 395 and 128 GB of memory. Built and tested on a GMKtec EVO-X2. The model only needs about 28 GB, so a 64 GB machine works too.
 
 ## More
 
-- [Build guide](docs/build-guide.md): every step, every flag, what to expect, what went wrong and how it was fixed.
-- [AGENTS.md](AGENTS.md): the rules an agent follows on the box.
+- [Build guide](docs/build-guide.md): every step and setting, what to expect, and what went wrong along the way and how it was fixed.
+- [AGENTS.md](AGENTS.md): the rules the AI agent follows while it works on the box.
