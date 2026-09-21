@@ -19,11 +19,11 @@
           "name": "Qwen3.8 27B (local)",
           "tool_call": true,
           "reasoning": true,
-          // send the model's thinking back on every turn; the chat template re-inserts it
+          // send the model's thinking back on every turn, and the chat template re-inserts it
           "interleaved": { "field": "reasoning_content" },
           "temperature": true,
           // the server allows 131072, but prompt processing on this hardware collapses past
-          // about 85K tokens; 81920 makes Kilo compact the session well before that
+          // about 85K tokens, and 81920 makes Kilo compact the session well before that
           "limit": { "context": 81920, "output": 16384 },
           // Qwen's recommended sampling for thinking mode
           "options": { "temperature": 1.0, "top_p": 0.95, "top_k": 20 }

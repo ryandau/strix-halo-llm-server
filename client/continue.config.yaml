@@ -1,5 +1,5 @@
 # Legacy Continue config for the Strix Halo box. Continue is no longer maintained (2.0.0 was its
-# final release); Kilo Code is the supported client. Kept for people who still use it.
+# final release). Kilo Code is the supported client. Kept for people who still use it.
 #
 # provider: deepseek, not openai. Continue only sends the model's reasoning back to the server for
 # the deepseek provider, and the Qwen chat template relies on it between tool calls. The trailing

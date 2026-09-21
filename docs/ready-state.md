@@ -1,6 +1,6 @@
 # Set up the box
 
-This is the only part you do at the keyboard. About 15 minutes. When you're done, you can unplug the monitor; everything else happens over the network from your own computer.
+This is the only part you do at the keyboard. About 15 minutes. When you're done, you can unplug the monitor. Everything else happens over the network from your own computer.
 
 ## 1. BIOS
 

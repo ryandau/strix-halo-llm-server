@@ -4,15 +4,15 @@ You are driving a remote Linux inference server over SSH from the user's worksta
 
 ## Connecting
 
-- The box is `<user>@<box-ip>`; the user gives you the values. Use key auth only: `ssh -o BatchMode=yes <user>@<box-ip>`. If that fails, stop and point the user at [docs/ready-state.md](docs/ready-state.md) step 5.
+- The box is `<user>@<box-ip>`. The user gives you the values. Use key auth only: `ssh -o BatchMode=yes <user>@<box-ip>`. If that fails, stop and point the user at [docs/ready-state.md](docs/ready-state.md) step 5.
 - Privileged commands use `sudo -n`. If `sudo -n true` fails, stop and point the user at ready-state step 4. Do not try to pipe a password.
-- Prefer one SSH call per logical step with clear `===` section headers in the output. Avoid `cd` in compound commands; use absolute paths.
+- Prefer one SSH call per logical step with clear `===` section headers in the output. Avoid `cd` in compound commands and use absolute paths.
 
 ## Safety on the box
 
 - Never run `pkill -f` or `pgrep -f` with a pattern that could match your own SSH command line. It will kill your session mid-script. Match on `pgrep -x <binary>` and inspect `/proc/<pid>/cmdline` instead.
 - Never touch the interface that carries the default route (`ip route show default`). No `ip link set down`, no regulatory-domain changes, no driver reloads. If the box is Wi-Fi-only, losing that link means someone has to walk over and press the power button.
-- Any job that may outlive an SSH session (model download, benchmark, long apt run) runs inside a named `tmux` session, logging to a file, and writes a `DONE_EXIT=<code>` marker line to that log on exit. Poll the marker; never assume silence is success.
+- Any job that may outlive an SSH session (model download, benchmark, long apt run) runs inside a named `tmux` session, logging to a file, and writes a `DONE_EXIT=<code>` marker line to that log on exit. Poll the marker. Never assume silence is success.
 - Never delete a model that is currently serving until its replacement has passed the acceptance checks in the guide. Download new models into a separate directory.
 - Before a service swap, stage the new unit file in the home directory, then install it. Keep the old unit's ExecStart line in your notes for rollback.
 - Do not upgrade the kernel or reboot unless the guide's phase calls for it or the user asks. If a reboot is needed, say so and let the user choose the moment. A restart of the model server drops the prompt cache, so ask before restarting while the user is mid-task.
@@ -24,7 +24,7 @@ You are driving a remote Linux inference server over SSH from the user's worksta
 - After a service (re)start, wait for `curl localhost:8080/health` to return `ok` rather than sleeping a fixed time. Then confirm VRAM use with `cat /sys/class/drm/card*/device/mem_info_vram_used`.
 - `/health` returning `ok` does not prove the GPU is working. After a `vk::Queue::submit: ErrorDeviceLost` the server stays up and healthy while every request fails. Check `journalctl -u qwen38 -b | grep -c ErrorDeviceLost` when something looks wrong.
 - Verify every downloaded file's size against the Hugging Face tree API before using it.
-- Speed claims come from `journalctl -u qwen38 | grep print_timing`, not from wall-clock guesses. Compare tok/s only at matching context depth; generation at 200 tokens of context and at 20K are different numbers.
+- Speed claims come from `journalctl -u qwen38 | grep print_timing`, not from wall-clock guesses. Compare tok/s only at matching context depth, because generation at 200 tokens of context and at 20K are different numbers.
 
 ## Diagnosing "it's slow"
 
@@ -32,7 +32,7 @@ Slowness on this platform is almost always prompt processing, not generation. Ch
 
 ## Workstation side
 
-You may edit `~/.config/kilo/kilo.jsonc` and, for legacy setups, `~/.continue/config.yaml` on the workstation. Back up the existing file first and use the templates in [client/](client/). Never remove the `interleaved` block from a Kilo model entry or switch a Continue entry back to `provider: openai`; both break the reasoning round trip and the model gets visibly dumber.
+You may edit `~/.config/kilo/kilo.jsonc` and, for legacy setups, `~/.continue/config.yaml` on the workstation. Back up the existing file first and use the templates in [client/](client/). Never remove the `interleaved` block from a Kilo model entry or switch a Continue entry back to `provider: openai`. Both break the reasoning round trip and the model gets visibly dumber.
 
 ## Reporting
 
